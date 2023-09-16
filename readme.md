@@ -1,5 +1,5 @@
 # MICCAI 2023 Challenges ：STS-基于2D 全景图像的牙齿分割任务
-# 初赛第一 复赛第四方案分享 
+# 初赛第一 复赛第四方案分享 [比赛链接](https://tianchi.aliyun.com/competition/entrance/532086/information)
 # 前言
 主要用的是segmentation-models-pytorch这一个语义分割库，这个库对新手非常友好，内置了许多主流的Backbone和SegHead。
 其实目前工业界主流的还是用mmsegmentation，这个库基于mmcv构建，模型更加全面，但是这个库的AIP接口太高级了，改动起来有点麻烦，对于新手不是很友好。
