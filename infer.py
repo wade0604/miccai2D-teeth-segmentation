@@ -1,12 +1,17 @@
-import os, cv2
+import torch
+print(torch.__version__)
+print(torch.cuda.is_available())
+import os
+import cv2
+print(cv2.__version__)
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import warnings
-import torch
 from torch.utils.data import DataLoader
 import albumentations as album
 warnings.filterwarnings("ignore")
+print(os.path.abspath('infers_fusai'))
 def visualize(**images):
     """
     Plot images in one row
@@ -23,6 +28,8 @@ def visualize(**images):
     plt.show()
 
 DATA_DIR = ''
+
+
 
 
 class_dict = pd.read_csv('class_dict.csv')
@@ -78,6 +85,7 @@ class ToothDataset(torch.utils.data.Dataset):
     def __getitem__(self, i):
         if self.train:
             # read images and masks
+            # print(self.image_paths[i])
             image = cv2.cvtColor(cv2.imread(self.image_paths[i]), cv2.COLOR_BGR2RGB)
             mask = cv2.cvtColor(cv2.imread(self.mask_paths[i]), cv2.COLOR_BGR2RGB)
 
@@ -122,28 +130,38 @@ def to_tensor(x, **kwargs):
 
 
 
-def to_tensor_f32(x, **kwargs):
-    return x.transpose(2, 0, 1).astype(np.float32)
+def to_tensor_mask(x, **kwargs):
+    return x.transpose(2, 0, 1).astype(np.int64)
 
 def get_preprocessing():
     _transform = []
     _transform.append(album.Normalize())
-    _transform.append(album.Lambda(image=to_tensor_f32, mask=to_tensor_f32))
+    _transform.append(album.Lambda(image=to_tensor, mask=to_tensor_mask))
 
     return album.Compose(_transform)
 
 
 if __name__ =='__main__':
-    sample_preds_folder = 'infers/'
-    path = 'save model/best_model.pth'
+    # model = smp.MAnet(
+    #     encoder_name='mit_b1',
+    #     encoder_depth=5,
+    #     decoder_channels=(256, 128, 64, 32, 16),
+    #     encoder_weights=None,
+    #     classes=2,
+    #     activation='sigmoid',
+    # ).cuda()
+
+    sample_preds_folder = 'infers_fusai/infers/'
+    if not os.path.exists(sample_preds_folder):
+        os.makedirs(sample_preds_folder)
+
+    path ='save model/best_mit_b2_fold_100_iou_0.9741.pth'
 
     DEVICE = 'cuda'
-
     best_model = torch.load(path, map_location=DEVICE)
 
-
-
     test_df = pd.read_csv(os.path.join(DATA_DIR, 'metadata_fusai_test.csv'))
+    test_df['image_path'] = test_df['image_path'].str.replace('\\', '/')
     test_dataset1 = ToothDataset(
         test_df,
         preprocessing=get_preprocessing(),
@@ -152,30 +170,34 @@ if __name__ =='__main__':
     )
 
     from tqdm import tqdm
-    save_probability = np.zeros((2000,320,640))
+    save_probability = np.zeros((1000,320,640))
     for idx in tqdm(range(len(test_dataset1))):
 
         image1,image_paths1 = test_dataset1[idx]
+        print(image_paths1)
+        best_model.eval()
+
         with torch.no_grad():#推理不需要梯度 可以降低内存需求
-            image_id = image_paths1.split('\\')[1].split('.')[0]
 
             x_tensor1 = torch.from_numpy(image1).to(DEVICE).unsqueeze(0)#1,3,320,640
+
 
             pred_mask1 = best_model(x_tensor1)#1,2,320,640 原图
             pred_mask1 = pred_mask1[:,0,:]#1,320,640 不需要sigmoid了因为已经在模型最后激活过了
 
-            x_tensor2 = torch.flip(x_tensor1, [0, 3])#左右翻转
+            x_tensor2 = torch.flip(x_tensor1, [2])#上下翻转 相当于0,2
             pred_mask2 = best_model(x_tensor2)
-            pred_mask2 = torch.flip(pred_mask2, [3, 0])[:,0,:]
+            pred_mask2 = torch.flip(pred_mask2, [2])[:,0,:]
 
-            x_tensor3 = torch.flip(x_tensor1, [1, 2])#上下翻转
+            x_tensor3 = torch.flip(x_tensor1, [3])#左右翻转 相当于0,3
             pred_mask3 = best_model(x_tensor3)
-            pred_mask3 = torch.flip(pred_mask3, [2, 1])[:,0,:]
+            pred_mask3 = torch.flip(pred_mask3, [3])[:,0,:]
 
 
+        pred_mask = (pred_mask1 + pred_mask2 + pred_mask3
 
-        pred_mask = (pred_mask1 + pred_mask2 + pred_mask3 ) / 3.0
-
+                     ) / 3.0 #0.9565
+        # pred_mask = pred_mask1
         save_probability[idx] = pred_mask.cpu().numpy().reshape(320, 640)
         threshold = 0.5
         pred_mask = torch.where(pred_mask >= threshold, torch.tensor(255, dtype=torch.float).to(DEVICE), pred_mask)#白色
@@ -188,8 +210,7 @@ if __name__ =='__main__':
         img = Image.fromarray(out[0].astype(np.uint8))
         img = img.convert('1')#0 255转0 1
 
-        img.save(os.path.join(sample_preds_folder, f"{image_id}.png"))
+        img.save(os.path.join(sample_preds_folder, f"test_{idx}.png"))
 
-    np.save('save probability/xxx.npy', save_probability)
 
 

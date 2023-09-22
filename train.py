@@ -36,11 +36,15 @@ train_df = pd.concat([train_df,metadata_pseudo_df])
 train_df = train_df[['image_id', 'image_path', 'mask_path']]
 train_df['image_path'] = train_df['image_path'].apply(lambda img_pth: os.path.join(DATA_DIR, img_pth))
 train_df['mask_path'] = train_df['mask_path'].apply(lambda img_pth: os.path.join(DATA_DIR, img_pth))
+train_df['image_path'] = train_df['image_path'].str.replace('\\', '/')
+train_df['mask_path'] = train_df['mask_path'].str.replace('\\', '/')
 
 valid_df = metadata_df[metadata_df['split']==fold_number]#五折1.0-5.0
 valid_df = valid_df[['image_id', 'image_path', 'mask_path']]
 valid_df['image_path'] = valid_df['image_path'].apply(lambda img_pth: os.path.join(DATA_DIR, img_pth))
 valid_df['mask_path'] = valid_df['mask_path'].apply(lambda img_pth: os.path.join(DATA_DIR, img_pth))
+valid_df['image_path'] = valid_df['image_path'].str.replace('\\', '/')
+valid_df['mask_path'] = valid_df['mask_path'].str.replace('\\', '/')
 
 print(train_df)
 print(valid_df)
@@ -195,13 +199,7 @@ def get_training_augmentation():
         album.VerticalFlip(),
         album.ShiftScaleRotate(shift_limit=0.0625, scale_limit=0.2, rotate_limit=15, p=0.9,
                          border_mode=cv2.BORDER_REFLECT),
-        # album.OneOf([
-        #     album.Cutout(),#在图像中生成正方形区域  只对图像有效
-        #     album.CoarseDropout(mask_fill_value=0),#在图像中生成矩形形区域 对图像和mask均有效 不指定maskfillvalue则只对图像操作
-        #     # album.ChannelDropout(),#对通道随机删除 只对图像有效
-        #     # album.PixelDropout(dropout_prob=0.001,mask_drop_value=0)#对像素点随机置0 对图像和mask均有效
-        #
-        # ], p=0.1),
+
         album.OneOf([
             album.ElasticTransform(p=.3),
             album.MedianBlur(p=0.3),
@@ -256,9 +254,6 @@ class CustomLoss(base.Loss):
         self.binloss = smp.losses.SoftBCEWithLogitsLoss(reduction='mean', smooth_factor=0.1)
 
     def forward(self, output, mask):
-        # output = torch.squeeze(output)
-        # mask = torch.squeeze(mask)
-
         dice = self.diceloss(output, mask)
         bce = self.binloss(output, mask)
 
@@ -266,7 +261,7 @@ class CustomLoss(base.Loss):
 
         return loss
 
-ENCODER = 'mit_b1'
+ENCODER = 'mit_b2'
 ENCODER_WEIGHTS = 'imagenet'
 CLASSES =  ['background', 'tooth']
 ACTIVATION = 'sigmoid' # could be None for logits or 'softmax2d' for multiclass segmentation
@@ -274,22 +269,15 @@ ACTIVATION = 'sigmoid' # could be None for logits or 'softmax2d' for multiclass 
 
 model= smp.MAnet(
     encoder_name=ENCODER,
-    encoder_depth=5,
-    decoder_channels= (256, 128, 64, 32, 16),
+    encoder_depth=4,
+    decoder_channels= (512,256, 128, 64),
     encoder_weights=ENCODER_WEIGHTS,
     # decoder_pab_channels=128,
     classes=len(CLASSES),
     activation=ACTIVATION,
 )
 
-# model= smp.MAnet(
-#     encoder_name=ENCODER,
-#     encoder_depth= 4,
-#     decoder_channels= (512, 256, 128, 64),
-#     encoder_weights=ENCODER_WEIGHTS,
-#     classes=len(CLASSES),
-#     activation=ACTIVATION,
-# )
+# model = torch.load('save model/初赛预训练模型.pth')
 
 
 preprocessing_fn = smp.encoders.get_preprocessing_fn(ENCODER, ENCODER_WEIGHTS)
@@ -309,8 +297,8 @@ valid_dataset = ToothDataset(
 )
 
 # Get train and val data loaders
-train_loader = DataLoader(train_dataset, batch_size=4, shuffle=True, num_workers=0)
-valid_loader = DataLoader(valid_dataset, batch_size=4, shuffle=False, num_workers=0)
+train_loader = DataLoader(train_dataset, batch_size=8, shuffle=True, num_workers=2)
+valid_loader = DataLoader(valid_dataset, batch_size=8, shuffle=False, num_workers=2)
 
 TRAINING = True
 
@@ -319,14 +307,15 @@ EPOCHS = 200
 
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 loss = CustomLoss()
 metrics = [
     smputils.metrics.IoU(threshold=0.5),
 ]
 
-# optimizer = torch.optim.SGD(model.parameters(), 0.00008, weight_decay=3e-5,momentum=0.99, nesterov=True)
+
 optimizer = torch.optim.AdamW([
-    dict(params=model.parameters(), lr=1e-4,weight_decay=0.01),
+    dict(params=model.parameters(), lr=6e-5,weight_decay=0.01),
 ])
 
 
@@ -371,9 +360,8 @@ if TRAINING:
 
         if best_iou_score < valid_logs['iou_score']:
             if best_iou_score != 0:
-                os.remove(f'save model/复赛/best_{ENCODER}_fold_{int(fold_number)}_iou_{best_iou_score:.4f}.pth')
+                os.remove(f'save model/best_{ENCODER}_fold_{int(fold_number)}_iou_{best_iou_score:.4f}.pth')
             best_iou_score = valid_logs['iou_score']
-            torch.save(model, f'save model/复赛/best_{ENCODER}_fold_{int(fold_number)}_iou_{valid_logs["iou_score"]:.4f}.pth')
-            torch.save(optimizer.state_dict(), f'optim.pth')
+            torch.save(model, f'save model/best_{ENCODER}_fold_{int(fold_number)}_iou_{valid_logs["iou_score"]:.4f}.pth')
             print(f'Best Score:{best_iou_score} Model saved!')
 

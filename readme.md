@@ -1,5 +1,24 @@
 # MICCAI 2023 Challenges ：STS-基于2D 全景图像的牙齿分割任务
-# 初赛第一 复赛第四方案分享 [比赛链接](https://tianchi.aliyun.com/competition/entrance/532086/information)
+# 初赛第一 复赛第四方案分享 [比赛链接](https://tianchi.aliyun.com/competition/entrance/532086/information)  [Github连接](https://github.com/wade0604/miccai2D-teeth-segmentation)
+
+# Docker构建方法（已经构建好无需再次执行，docker镜像链接在上方）
+   1.cd <path/to/miccai2d_docker>  
+   2.`docker pull pytorch/pytorch:1.12.1-cuda11.3-cudnn8-runtime`  
+   3.`docker build -t miccai2d .`  
+   4.`docker save -o miccai2d.tar miccai2d` 构建完成后会有一个miccai2d.tar文件 
+     
+# Docker运行方法
+   1.解压miccai2d_docker.zip文件到本地，若没有miccai2d.tar文件，请从上面的Docker链接中下载并保存到miccai2d_docker文件中  
+   2.在miccai2d_docker文件内打开git bash  
+   3.执行`mkdir tmp`, tmp文件用于存放最后的预测结果  
+   4.执行`docker load --input miccai2d.tar`，加载镜像  
+   5.执行`docker run -it --name='miccai2d_container' --gpus=all miccai2d`，运行容器，会自动执行推理脚本infer.sh   
+   6.执行`docker cp miccai2d_container:/infers_fusai/ tmp`，将docker容器内的结果导出到tmp文件得到最终预测结果    
+# 文件目录说明
+   1.fusai_image文件存放复赛测试集  
+   2.infers_fusai为排行榜上0.9621的预测结果  
+   3.save model文件包含模型权重  
+   4.tmp文件初始为空，执行完上面的命令后会有跟infers_fusai中一样的结果  
 # 前言
 主要用的是segmentation-models-pytorch这一个语义分割库，这个库对新手非常友好，内置了许多主流的Backbone和SegHead。
 其实目前工业界主流的还是用mmsegmentation，这个库基于mmcv构建，模型更加全面，但是这个库的AIP接口太高级了，改动起来有点麻烦，对于新手不是很友好。
@@ -105,3 +124,6 @@
 ## 可能有效的方法
 * 二分类阈值调参，不一定0.5的效果最佳
 * 考虑多尺度推理TTA以及滑动窗口推理TTA
+
+
+   
